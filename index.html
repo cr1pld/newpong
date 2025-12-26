@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Space Neon RGB Pong</title>
+<style>
+  body {
+    margin: 0;
+    background: black;
+    font-family: monospace;
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    height: 100vh;
+  }
+  canvas {
+    margin-top: 30px;
+    background: black;
+    border: 2px solid white;
+  }
+  h1 {
+    position: absolute;
+    top: 5px;
+    left: 50%;
+    transform: translateX(-50%);
+    color: white;
+    font-size: 20px;
+  }
+</style>
+</head>
+<body>
+
+<h1>Space Neon Pong — Mouse vs AI</h1>
+<canvas id="game"></canvas>
+
+<script>
+const canvas = document.getElementById("game");
+const ctx = canvas.getContext("2d");
+
+/* === BIGGER SIZE (NEAR MAX) === */
+const WIDTH = 1400;
+const HEIGHT = 800;
+canvas.width = WIDTH;
+canvas.height = HEIGHT;
+
+const WIN_SCORE = 10;
+let gameOver = false;
+let winnerText = "";
+
+/* === OBJECTS === */
+const paddleWidth = 12;
+const paddleHeight = 110;
+
+const player = { x: 15, y: HEIGHT/2 - paddleHeight/2, width: paddleWidth, height: paddleHeight, score: 0 };
+const ai = { x: WIDTH - paddleWidth - 15, y: HEIGHT/2 - paddleHeight/2, width: paddleWidth, height: paddleHeight, speed: 6, score: 0 };
+
+const ball = {
+  x: WIDTH/2,
+  y: HEIGHT/2,
+  size: 12,
+  speedX: 2,
+  speedY: 1.8,
+  slowTimer: 0
+};
+
+/* === POWERUP === */
+const powerUp = {
+  x: Math.random() * (WIDTH-400) + 200,
+  y: Math.random() * (HEIGHT-200) + 100,
+  size: 16,
+  active: true
+};
+
+/* === STARS === */
+const stars = Array.from({length:260}, () => ({
+  x: Math.random()*WIDTH,
+  y: Math.random()*HEIGHT,
+  size: Math.random()*2+1,
+  alpha: Math.random()
+}));
+
+const particles = [];
+let hue = 0;
+let paddleHue = 0;
+
+/* === AI === */
+let aiReaction = 0.35;
+let aiError = 0;
+
+/* === INPUT === */
+canvas.addEventListener("mousemove", e => {
+  const r = canvas.getBoundingClientRect();
+  player.y = e.clientY - r.top - paddleHeight/2;
+  player.y = Math.max(0, Math.min(HEIGHT-paddleHeight, player.y));
+});
+
+canvas.addEventListener("click", () => {
+  if (gameOver) resetGame();
+});
+
+/* === SOUND === */
+const audioCtx = new (window.AudioContext||window.webkitAudioContext)();
+function playSound(f,t=0.08){
+  const o=audioCtx.createOscillator();
+  const g=audioCtx.createGain();
+  o.connect(g); g.connect(audioCtx.destination);
+  o.frequency.value=f;
+  o.start(); o.stop(audioCtx.currentTime+t);
+}
+
+/* === LOGIC === */
+function update(){
+  if(gameOver) return;
+
+  // AI
+  const center = ai.y + ai.height/2;
+  const target = ball.y + ball.size/2 + aiError;
+  if(center < target) ai.y += ai.speed*aiReaction;
+  if(center > target) ai.y -= ai.speed*aiReaction;
+  aiError += (Math.random()-0.5)*1.2;
+  aiError = Math.max(-6,Math.min(6,aiError));
+
+  // Ball
+  ball.x += ball.speedX;
+  ball.y += ball.speedY;
+
+  if(ball.slowTimer>0) ball.slowTimer--;
+
+  // Walls
+  if(ball.y<=0 || ball.y+ball.size>=HEIGHT){
+    ball.speedY*=-1; playSound(300);
+  }
+
+  // Paddles
+  if(hit(player)||hit(ai)){
+    ball.speedX*=-1; playSound(600);
+  }
+
+  // Power-up
+  if(powerUp.active &&
+     ball.x < powerUp.x+powerUp.size &&
+     ball.x+ball.size > powerUp.x &&
+     ball.y < powerUp.y+powerUp.size &&
+     ball.y+ball.size > powerUp.y){
+      ball.speedX*=0.5;
+      ball.speedY*=0.5;
+      ball.slowTimer=360;
+      powerUp.active=false;
+      playSound(150,0.2);
+  }
+
+  if(ball.slowTimer===1){
+    ball.speedX*=2;
+    ball.speedY*=2;
+  }
+
+  // Score
+  if(ball.x<0){ ai.score++; resetBall(); }
+  if(ball.x>WIDTH){ player.score++; resetBall(); }
+
+  if(player.score===WIN_SCORE){ gameOver=true; winnerText="YOU WIN!"; }
+  if(ai.score===WIN_SCORE){ gameOver=true; winnerText="AI WINS"; }
+}
+
+function hit(p){
+  return ball.x<p.x+p.width && ball.x+ball.size>p.x &&
+         ball.y<p.y+p.height && ball.y+ball.size>p.y;
+}
+
+function resetBall(){
+  ball.x=WIDTH/2; ball.y=HEIGHT/2;
+  ball.speedX*=-1;
+  playSound(800,0.15);
+}
+
+function resetGame(){
+  player.score=0;
+  ai.score=0;
+  gameOver=false;
+  powerUp.active=true;
+}
+
+/* === DRAW === */
+function draw(){
+  ctx.fillStyle="rgba(0,0,0,0.3)";
+  ctx.fillRect(0,0,WIDTH,HEIGHT);
+
+  stars.forEach(s=>{
+    ctx.fillStyle=`rgba(255,255,255,${s.alpha})`;
+    ctx.fillRect(s.x,s.y,s.size,s.size);
+    s.y+=0.3; if(s.y>HEIGHT) s.y=0;
+  });
+
+  // Power-up
+  if(powerUp.active){
+    ctx.save();
+    ctx.fillStyle="cyan";
+    ctx.shadowBlur=25;
+    ctx.shadowColor="cyan";
+    ctx.beginPath();
+    ctx.arc(powerUp.x,powerUp.y,powerUp.size/2,0,Math.PI*2);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  // Paddles
+  ctx.fillStyle=`hsl(${paddleHue},100%,50%)`;
+  ctx.fillRect(player.x,player.y,player.width,player.height);
+  ctx.fillStyle=`hsl(${(paddleHue+180)%360},100%,50%)`;
+  ctx.fillRect(ai.x,ai.y,ai.width,ai.height);
+  paddleHue+=0.5;
+
+  // Ball + sparks
+  const bx=ball.x+ball.size/2, by=ball.y+ball.size/2;
+  particles.push({x:bx,y:by,size:5,life:22,hue});
+  for(let i=particles.length-1;i>=0;i--){
+    const p=particles[i];
+    ctx.globalAlpha=p.life/22;
+    ctx.fillStyle=`hsl(${p.hue},100%,50%)`;
+    ctx.beginPath(); ctx.arc(p.x,p.y,p.size,0,Math.PI*2); ctx.fill();
+    p.life--; p.size*=0.95;
+    if(p.life<=0) particles.splice(i,1);
+  }
+  ctx.globalAlpha=1;
+
+  ctx.save();
+  ctx.fillStyle="white";
+  ctx.shadowColor=`hsl(${hue},100%,50%)`;
+  ctx.shadowBlur=25;
+  ctx.beginPath();
+  ctx.arc(bx,by,ball.size/2,0,Math.PI*2);
+  ctx.fill();
+  ctx.restore();
+
+  hue+=4;
+
+  // Score
+  ctx.fillStyle="white";
+  ctx.font="34px monospace";
+  ctx.fillText(player.score, WIDTH*0.25, 50);
+  ctx.fillText(ai.score, WIDTH*0.75, 50);
+
+  // Win screen
+  if(gameOver){
+    ctx.fillStyle="rgba(0,0,0,0.85)";
+    ctx.fillRect(0,0,WIDTH,HEIGHT);
+    ctx.fillStyle="white";
+    ctx.font="60px monospace";
+    ctx.fillText(winnerText, WIDTH/2 - ctx.measureText(winnerText).width/2, HEIGHT/2);
+    ctx.font="22px monospace";
+    ctx.fillText("Click to Restart", WIDTH/2 - 90, HEIGHT/2 + 40);
+  }
+}
+
+/* === LOOP === */
+function loop(){
+  update();
+  draw();
+  requestAnimationFrame(loop);
+}
+loop();
+</script>
+
+</body>
+</html>
